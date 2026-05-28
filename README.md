@@ -1,7 +1,7 @@
 # ManyMaps
 
-This repo contains data and code for Baram et al. (2024)
-https://www.biorxiv.org/content/10.1101/2024.10.11.617652v1.full.pdf
+This repo contains data and code for Baram et al. (2026)
+https://www.biorxiv.org/content/10.1101/2024.10.11.617652v3.full.pdf
 
 # System requirements
 
@@ -10,4 +10,4 @@ The code was developed using Python 3.11, and Matlab2020b. Certain files are run
 # Instructions for use
 Files to run the GLM and define the contrast images as well as scripts to reproduce the images reported in the paper can be found in the folder Scripts. 
 
-Data contains raw behavioural data (alldata), arena task data (arena), parameter estimates extracted from various ROIs (ROI) and T-maps as found in the paper. 
+Data contains raw behavioural data (alldata), arena task data (arena), parameter estimates extracted from various ROIs (ROI), data RDMs for RSA analyses, and T-maps as found in the paper. 
