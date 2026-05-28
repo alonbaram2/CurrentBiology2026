@@ -1,0 +1,222 @@
+% Run design separately for each session and run
+clear all
+addpath(genpath('/vols/Scratch/mgarvert/ManyMaps/myPreprocessing/spm12'))
+
+root        = '/vols/Scratch/mgarvert/ManyMaps/imagingData/Subj_';
+nblocks     = 4;
+
+% Name of the experimental design. Start with 2* for RSA-designs and 1* for
+% more basic designs
+
+spmfsl          = 'fsl'; % 1: spm, 0: fsl
+prefix          = '';
+
+subj    = XXsubjIDXX;
+session = XXsessionIDXX;
+design_name     = XXdesignNameXX;
+smoothed        = XXsmoothedXX;
+
+if strcmp(spmfsl,'spm')
+    datadir     = 'SPM/';
+else
+    if strcmp(smoothed,'__noSmooth')
+	datadir     = ['preprocess_noSmooth.feat'];
+    else
+	datadir     = ['preprocess_smooth.feat'];
+     end
+end
+
+
+% If not normalising then create own mask to use for epis- check this as we
+% don't have an ideal struct to use as a mask. Must be big enough
+
+disp(['%%%%%%%%% Starting model ',design_name,' for session: ', num2str(session),' %%%%%%%%%']);
+    
+    
+% create design directory, specify units of design, TR and slices
+% ====================================================================== %
+if ~exist([root,num2str(subj),'/session_',num2str(session),'/1stLevel/',design_name,'/'],'dir'); mkdir([root,num2str(subj),'/session_',num2str(session),'/1stLevel/',design_name,'/']); end
+
+fmri_spec.dir             = {[root,num2str(subj),'/session_',num2str(session),'/1stLevel/',design_name,'/']}; % directory for SPM.mat file
+fmri_spec.timing.units    = 'scans';   % units for design: seconds or scans?
+fmri_spec.timing.RT       = 1.235;    % TR
+fmri_spec.timing.fmri_t   = 72;       % microtime resolution (time-bins per scan) = slices
+fmri_spec.timing.fmri_t0  = 1;        % microtime onset = time bin at which regressors coincide with data acquisiton
+
+delete ([fmri_spec.dir{1},'/SPM.mat']);
+
+for run = 1:nblocks
+    
+    % number of scans and data
+    % ====================================================================== %
+    
+    % Header information > no. of volumes
+    if strcmp(spmfsl,'spm')
+        epi_dir = [root,num2str(subj),'/session_',num2str(session),'/run_',num2str(run),'/',datadir];
+        epiimgs = spm_select('List',epi_dir,[prefix,'.*.nii']);
+        for epi = 1:length(epiimgs)
+            fmri_spec.sess(run).scans{epi,1} = [epi_dir,epiimgs(epi,:)];
+        end
+    else
+        if strcmp(smoothed,'__noSmooth') %'_noSmooth' or ''
+            if ~exist([root,num2str(subj),'/session_',num2str(session),'/run_',num2str(run),'/',datadir,'/filtered_func_data_subj_space.nii'])
+                gunzip ([root,num2str(subj),'/session_',num2str(session),'/run_',num2str(run),'/',datadir,'/filtered_func_data_subj_space.nii.gz'])
+            end
+            nii = [root,num2str(subj),'/session_',num2str(session),'/run_',num2str(run),'/',datadir,'/filtered_func_data_subj_space.nii'];
+        else
+            if ~exist([root,num2str(subj),'/session_',num2str(session),'/run_',num2str(run),'/',datadir,'/filtered_func_data_subj_space.nii'])
+                gunzip ([root,num2str(subj),'/session_',num2str(session),'/run_',num2str(run),'/',datadir,'/filtered_func_data_subj_space.nii.gz'])
+            end
+            nii = [root,num2str(subj),'/session_',num2str(session),'/run_',num2str(run),'/',datadir,'/filtered_func_data_subj_space.nii'];
+        end
+        nb = nifti(nii);
+        
+        for epi = 1:nb.dat.dim(4)
+            fmri_spec.sess(run).scans{epi,1} = [nii,',',num2str(epi)];
+        end
+    end
+    fmri_spec.sess(run).nscan = length(fmri_spec.sess(run).scans);
+    
+    % task conditions - EVs of design matrix
+    % =================================================================== %
+    c = 0; % condition counter
+    
+    %% Object onsets
+    for m = 1:2
+        for s = 0:1
+            c = c+1;
+            o = load([root,num2str(subj),'/session_',num2str(session),'/behaviour/EVs/Subj_',num2str(subj),'_session_',num2str(session),'_run_',num2str(run),'/all_stimuli_map',num2str(m),'switch_',num2str(s),'_distRel.txt']);
+
+            fmri_spec.sess(run).cond(c).name                = ['all_objects'];
+            fmri_spec.sess(run).cond(c).onset               = o(:,1)/fmri_spec.timing.RT; %
+            fmri_spec.sess(run).cond(c).duration            = o(:,2)/fmri_spec.timing.RT*2; %constant
+            fmri_spec.sess(run).cond(c).tmod                = 0;      % time modulation
+            fmri_spec.sess(run).cond(c).pmod                = struct('name', {}, 'param', {}, 'poly', {});
+ 	        fmri_spec.sess(run).cond(c).orth                = 0;
+
+                
+                o = load([root,num2str(subj),'/session_',num2str(session),'/behaviour/EVs/Subj_',num2str(subj),'_session_',num2str(session),'_run_',num2str(run),'/all_stimuli_map',num2str(m),'switch_',num2str(s),'_distRel.txt']);
+                fmri_spec.sess(run).cond(c).pmod(1).param       = o(:,3) - mean(o(:,3)); % vector containing parametric values
+                fmri_spec.sess(run).cond(c).pmod(1).name        = ' '; % name to call parameters
+                fmri_spec.sess(run).cond(c).pmod(1).poly        = 1; %First order polynomial expansion, always leave on 1 (so for all parametric regressors the same, could define in a loop)
+
+
+                o = load([root,num2str(subj),'/session_',num2str(session),'/behaviour/EVs/Subj_',num2str(subj),'_session_',num2str(session),'_run_',num2str(run),'/all_stimuli_map',num2str(m),'switch_',num2str(s),'_distIrrel.txt']);
+                fmri_spec.sess(run).cond(c).pmod(2).param       = o(:,3) - mean(o(:,3)); % vector containing parametric values
+                fmri_spec.sess(run).cond(c).pmod(2).name        = 'chosen dist rel map'; % name to call parameters
+                fmri_spec.sess(run).cond(c).pmod(2).poly        = 1; %First order polynomial expansion, always leave on 1 (so for all parametric regressors the same, could define in a loop)
+
+                fmri_spec.sess(run).cond(c).duration(fmri_spec.sess(run).cond(c).onset > fmri_spec.sess(run).nscan) = []; % In one scan the scanner stopped prematurely!
+                fmri_spec.sess(run).cond(c).pmod(1).param(fmri_spec.sess(run).cond(c).onset > fmri_spec.sess(run).nscan)= []; %
+                fmri_spec.sess(run).cond(c).pmod(2).param(fmri_spec.sess(run).cond(c).onset > fmri_spec.sess(run).nscan)= []; %
+                fmri_spec.sess(run).cond(c).onset(fmri_spec.sess(run).cond(c).onset > fmri_spec.sess(run).nscan) = []; % In one scan the scanner stopped prematurely!                
+        end
+    end
+    
+    %% choice trials
+    c = c+1;
+    o = load([root,num2str(subj),'/session_',num2str(session),'/behaviour/EVs/Subj_',num2str(subj),'_session_',num2str(session),'_run_',num2str(run),'/allChoices.txt']);
+    
+    fmri_spec.sess(run).cond(c).name                = 'choices';
+    fmri_spec.sess(run).cond(c).onset               = o(:,1)/fmri_spec.timing.RT; %
+    fmri_spec.sess(run).cond(c).duration            = o(:,2)/fmri_spec.timing.RT; %constant
+    fmri_spec.sess(run).cond(c).tmod                = 0;      % time modulation
+    fmri_spec.sess(run).cond(c).pmod                = struct('name', {}, 'param', {}, 'poly', {});
+    fmri_spec.sess(run).cond(c).orth                = 0;
+
+    o = load([root,num2str(subj),'/session_',num2str(session),'/behaviour/EVs/Subj_',num2str(subj),'_session_',num2str(session),'_run_',num2str(run),'/distRelChosen.txt']);
+    fmri_spec.sess(run).cond(c).pmod(1).param       = o(:,3) - mean(o(:,3)); % vector containing parametric values
+    fmri_spec.sess(run).cond(c).pmod(1).name        = 'chosen dist rel map'; % name to call parameters
+    fmri_spec.sess(run).cond(c).pmod(1).poly        = 1; %First order polynomial expansion, always leave on 1 (so for all parametric regressors the same, could define in a loop)
+    
+    o = load([root,num2str(subj),'/session_',num2str(session),'/behaviour/EVs/Subj_',num2str(subj),'_session_',num2str(session),'_run_',num2str(run),'/distRelUnchosen.txt']);
+    fmri_spec.sess(run).cond(c).pmod(2).param       = o(:,3) - mean(o(:,3)); % vector containing parametric values
+    fmri_spec.sess(run).cond(c).pmod(2).name        = 'unchosen dist rel map'; % name to call parameters
+    fmri_spec.sess(run).cond(c).pmod(2).poly        = 1; %First order polynomial expansion, always leave on 1 (so for all parametric regressors the same, could define in a loop)
+    
+    o = load([root,num2str(subj),'/session_',num2str(session),'/behaviour/EVs/Subj_',num2str(subj),'_session_',num2str(session),'_run_',num2str(run),'/distIrrelChosen.txt']);
+    fmri_spec.sess(run).cond(c).pmod(3).param       = o(:,3) - mean(o(:,3)); % vector containing parametric values
+    fmri_spec.sess(run).cond(c).pmod(3).name        = 'chosen dist irrel map'; % name to call parameters
+    fmri_spec.sess(run).cond(c).pmod(3).poly        = 1; %First order polynomial expansion, always leave on 1 (so for all parametric regressors the same, could define in a loop)
+    
+    o = load([root,num2str(subj),'/session_',num2str(session),'/behaviour/EVs/Subj_',num2str(subj),'_session_',num2str(session),'_run_',num2str(run),'/distIrrelUnchosen.txt']);
+    fmri_spec.sess(run).cond(c).pmod(4).param       = o(:,3) - mean(o(:,3)); % vector containing parametric values
+    fmri_spec.sess(run).cond(c).pmod(4).name        = 'unchosen dist irrel map'; % name to call parameters
+    fmri_spec.sess(run).cond(c).pmod(4).poly        = 1; %First order polynomial expansion, always leave on 1 (so for all parametric regressors the same, could define in a loop)
+    
+    fmri_spec.sess(run).cond(c).duration(fmri_spec.sess(run).cond(c).onset > fmri_spec.sess(run).nscan)= []; %
+    fmri_spec.sess(run).cond(c).pmod(1).param(fmri_spec.sess(run).cond(c).onset > fmri_spec.sess(run).nscan)= []; %
+    fmri_spec.sess(run).cond(c).pmod(2).param(fmri_spec.sess(run).cond(c).onset > fmri_spec.sess(run).nscan)= []; %
+    fmri_spec.sess(run).cond(c).pmod(3).param(fmri_spec.sess(run).cond(c).onset > fmri_spec.sess(run).nscan)= []; %
+    fmri_spec.sess(run).cond(c).pmod(4).param(fmri_spec.sess(run).cond(c).onset > fmri_spec.sess(run).nscan)= []; %
+    fmri_spec.sess(run).cond(c).onset(fmri_spec.sess(run).cond(c).onset > fmri_spec.sess(run).nscan)= []; %
+    
+    %% button
+    c = c+1;
+    o = load([root,num2str(subj),'/session_',num2str(session),'/behaviour/EVs/Subj_',num2str(subj),'_session_',num2str(session),'_run_',num2str(run),'/button.txt']);
+    
+    fmri_spec.sess(run).cond(c).name                = 'button';
+    fmri_spec.sess(run).cond(c).onset               = o(:,1)/fmri_spec.timing.RT; %
+    fmri_spec.sess(run).cond(c).duration            = 0; %constant
+    fmri_spec.sess(run).cond(c).tmod                = 0;      % time modulation
+    fmri_spec.sess(run).cond(c).pmod                = struct('name', {}, 'param', {}, 'poly', {});
+    
+    fmri_spec.sess(run).cond(c).onset(fmri_spec.sess(run).cond(c).onset > fmri_spec.sess(run).nscan) = []; % In one scan the scanner stopped prematurely!
+    
+    % other regressors: motion regressors- once physio regressors have been
+    % appended call this file name
+    % ======================================================================= %
+    fmri_spec.sess(run).multi           = {''};
+    fmri_spec.sess(run).regress         = struct('name', {}, 'val', {});
+    
+    % For motion regressors (or motion + physio)
+    % Load FSL motion parameters and save them as text file
+    if strcmp(spmfsl,'fsl')
+        fmri_spec.sess(run).multi_reg = {[root,num2str(subj),'/session_',num2str(session),'/run_',num2str(run),'/',datadir,'/mc/prefiltered_func_data_mcf.txt']};
+    else
+        fmri_spec.sess(run).multi_reg = {[root,num2str(subj),'/session_',num2str(session),'/run_',num2str(run),'/',datadir,'rp_bfunct_block_',num2str(run),'_00001.txt']};
+    end
+    
+    fmri_spec.sess(run).hpf             = 128;
+    fmri_spec.fact                      = struct('name', {}, 'levels', {});
+    fmri_spec.bases.hrf.derivs          = [0 0]; %The default is to have these set to zero. Set to one for temporal derivatives
+    fmri_spec.volt                      = 1;
+    fmri_spec.global                  	= 'None';
+    fmri_spec.mthresh                   = 0.000001;
+    fmri_spec.cvi                       = 'FAST';
+    fmri_spec.mask                      = {[root,num2str(subj),'/bestStruct/brain_mask.nii']};
+    
+    disp(run)
+    disp(c)
+    
+end
+
+
+% Run design specification
+% ======================================================================= %
+matlabbatch{1}.spm.stats.fmri_spec = fmri_spec;
+design_specification = matlabbatch;
+
+delete ([root num2str(subj),'/session_',num2str(session), '/1stLevel/',design_name,'/SPM.mat']);
+
+save ([root num2str(subj),'/session_',num2str(session), '/1stLevel/',design_name,'/design_spec.mat'],'matlabbatch');
+disp(['%%%%%%%%% Starting design spec for session: ', num2str(session),'%%%%%%%%%']);
+spm_jobman('run',design_specification);
+
+clear matlabbatch; clear fmri_spec;
+
+
+% Estimate
+% ======================================================================= %
+matlabbatch{1}.spm.stats.fmri_est.spmmat = {[root num2str(subj),'/session_',num2str(session), '/1stLevel/',design_name,'/SPM.mat']};
+matlabbatch{1}.spm.stats.fmri_est.method.Classical = 1;
+estimation = matlabbatch;
+save([root,num2str(subj),'/session_',num2str(session),'/1stLevel/',design_name,'/design.mat'],'design_specification','estimation');
+
+disp(['%%%%%%%%% Starting estimation for session: ', num2str(session),'%%%%%%%%%']);
+spm_jobman('run',estimation);
+
+clear epiimgs fmri_spec R mot_reg;
+clear matlabbatch; clear fmri_spec;
+
+
