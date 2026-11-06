@@ -1,7 +1,7 @@
 # ManyMaps
 
 This repo contains data and code for Baram et al. (2026)
-https://www.biorxiv.org/content/10.1101/2024.10.11.617652v3.full.pdf
+https://www.cell.com/current-biology/fulltext/S0960-9822(26)00673-1
 
 # System requirements
 
